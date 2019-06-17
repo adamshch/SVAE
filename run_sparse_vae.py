@@ -1,77 +1,79 @@
+############################################################
+## import relevant packages
+
 import time
 import sys
 import numpy as np
 import pickle
 import logclass.log as log
 import tensorflow as tf
-
 import svae.decoder.decoder as dec
 import svae.encoder.encoder as enc
 import svae.variance.variance as make_var
-
 import svae.data.get_data as dat
-
 import svae.losses.make_loss as make_loss
-
 import os
-
 import shutil
 import utilities as util
+                                                                    #
+####################################################################
+## Function = This function appears to shuffle a bunch of datapoints
 
 def split_by_batches(data,batch_size,shuffle = True):
-    if shuffle:
-        D = data[np.random.permutation(range(data.shape[0]))]
-    else:
-        D = data
+    # data is a Nx??? array
+    if shuffle:                                                     # If asked for...
+        D = data[np.random.permutation(range(data.shape[0]))]       #  ...shuffle the data 
+    else:                                                           # Otherwise
+        D = data                                                    #  ...do nothing to the data
 
     D = np.array([D[k:k + batch_size] for k in range(0,len(data)-batch_size,batch_size)])
     return D
 
+####################################################################
+## Function = ?
+
 def run_training_loop(data,vdata,input_tensor,batch_size,train_op,loss_op,recerr_op,log,dirname,log_freq,n_grad_step,save_freq):
 
     def var_loss(session,vdat,nbatch = 10):
-        D = split_by_batches(vdat,batch_size,shuffle = False)
-        loss = 0
-        rerr = 0
-        nb = 0
-        for d in D:
-            nb += 1
-            l,r = session.run([loss_op,recerr_op],{input_tensor:d})
-            loss += l
-            rerr += r
-            if nb == nbatch:
-                break
-        loss /= nbatch
-        rerr /= nbatch
-        return loss,rerr
+        # SUB-FUNCTION TO CALCULATE THE LOSS OF THE VAE
+        D    = split_by_batches(vdat,batch_size,shuffle = False)    # Shuffel and partition data into batches
+        loss = 0                                                    # Initialize the loss to zero
+        rerr = 0                                                    # Initialize the reconstruction loss to zero
+        nb   = 0                                                    # Initialize a counter over the number of batches
+        for d in D:                                                 # Loop through the different batches
+            nb   += 1                                               # Update counter
+            l,r   = session.run([loss_op,recerr_op],{input_tensor:d}) # TENSORFLOW: RUN A SESSION??
+            loss += l                                               # Update the loss function
+            rerr += r                                               # Update the reconstruction error 
+            if nb == nbatch:                                        # Check if passed the number of batches
+                break                                               #   ... if so, BREAK
+        loss /= nbatch                                              # Normalize the loss to the number of batches
+        rerr /= nbatch                                              # Normalize the reconstruction error to the number of batches
+        return loss,rerr                                            # Return the loss the reconstruction error
     
-    init = tf.global_variables_initializer()
-    sess = tf.Session()
+    init  = tf.global_variables_initializer()
+    sess  = tf.Session()
     sess.run(init)
     
-    nloss = 0
-
-    t1 = time.time()
+    nloss   = 0                                                     # Initailize a loss   
+    t1      = time.time()                                           # Record start time
     av_time = -1
-    efrac = .9
+    efrac   = .9
 
     log.log(["grad_step","loss","recloss","var_loss","var_rec","time_rem"],PRINT = True)
 
     t_loss_temp = []
-    t_rec_temp = []
-
-    lrflag = True
-
-    saver = tf.train.Saver(max_to_keep = 1000)
+    t_rec_temp  = []
+    lrflag      = True
+    saver       = tf.train.Saver(max_to_keep = 1000)
     
     for grad_step in range(n_grad_step + 1):
             
-        batch = data[np.random.choice(np.arange(len(data)),batch_size)]
+        batch          = data[np.random.choice(np.arange(len(data)),batch_size)]     # Get a batch of data
+        _,loss,recloss = sess.run([train_op,loss_op,recerr_op],{input_tensor:batch}) # Run a session to get the loss/reconstruction error
         
-        _,loss,recloss = sess.run([train_op,loss_op,recerr_op],{input_tensor:batch})
-        
-        t_loss_temp.append(loss)
-        t_rec_temp.append(recloss)
+        t_loss_temp.append(loss)                                    # Append loss to the ????
+        t_rec_temp.append(recloss)                                  # Append reconstruction error to the ?????
         
         if grad_step % log_freq  == 0:
             if grad_step == 0:
@@ -81,19 +83,19 @@ def run_training_loop(data,vdata,input_tensor,batch_size,train_op,loss_op,recerr
             else:
                 av_time = efrac*av_time + (1. - efrac)*(time.time() - t1)
                 
-            t1 = time.time()
-            trem = av_time * ((n_grad_step) + 1 - grad_step)
-            trem = trem / log_freq / 60. / 60.
+            t1         = time.time()
+            trem       = av_time * ((n_grad_step) + 1 - grad_step)
+            trem       = trem / log_freq / 60. / 60.
 
-            loss = np.mean(t_loss_temp)
-            recloss = np.mean(t_rec_temp)
+            loss       = np.mean(t_loss_temp)
+            recloss    = np.mean(t_rec_temp)
 
             vloss,vrec = var_loss(sess,vdata)
             
             log.log([grad_step,loss,recloss,vloss,vrec,trem],PRINT = True)
                 
             t_loss_temp = []
-            t_rec_temp = []
+            t_rec_temp  = []
 
         if grad_step % save_freq == 0:
             saver.save(sess,dirname + "/saved_params/saved_model_{}".format(str(grad_step)))
@@ -101,7 +103,8 @@ def run_training_loop(data,vdata,input_tensor,batch_size,train_op,loss_op,recerr
     saver.save(sess,dirname + "/saved_params/saved_model_{}".format("final"))
     sess.close()
 
-    
+####################################################################
+## Function = ?   
 
 def run(patch_size,n_batch,pca_frac,overcomplete,learning_rate,n_grad_step,loss_type,n_gauss_dim,n_lat_samp,seed,param_save_freq,log_freq,sigma,s1,s2,S,device,PCA_truncation,dataset):
 
@@ -134,86 +137,85 @@ def run(patch_size,n_batch,pca_frac,overcomplete,learning_rate,n_grad_step,loss_
     
     LOG = log.log(dirname + "/logfile.csv")
 
-    netpar = prepare_network(params)
-
-    var = netpar["variance"]
-    loss_exp = netpar["loss_exp"]
+    netpar    = prepare_network(params)
+    var       = netpar["variance"]
+    loss_exp  = netpar["loss_exp"]
     recon_err = netpar["recon_err"]
-    images = netpar["images"]
-    data = netpar["data"]
-    varif = netpar["vardat"]
+    images    = netpar["images"]
+    data      = netpar["data"]
+    varif     = netpar["vardat"]
 
-    LR = tf.Variable(np.float32(learning_rate),trainable = False)
-
-    adam = tf.train.AdamOptimizer(learning_rate = LR)
-
+    LR    = tf.Variable(np.float32(learning_rate),trainable = False)
+    adam  = tf.train.AdamOptimizer(learning_rate = LR)
     train = adam.minimize(loss_exp)
 
     run_training_loop(data,varif,images,n_batch,train,loss_exp,recon_err,LOG,dirname,log_freq,n_grad_step,param_save_freq)
 
+####################################################################
+## Function = ?   
+
 def prepare_network(params,old = False):
     
-    patch_size = params["patch_size"]
-    n_batch = params["n_batch"]
-    pca_frac = params["pca_frac"]
-    overcomplete = params["overcomplete"]
-    learning_rate = params["learning_rate"]
-    n_grad_step = params["n_grad_step"]
-    loss_type = params["loss_type"]
-    n_gauss_dim = params["n_gauss_dim"]
-    n_lat_samp = params["n_lat_samp"]
-    sigma = params["sigma"]
-    param_save_freq = params["param_save_freq"]
-    log_freq = params["log_freq"]
-    s1 = params["s1"]
-    s2 = params["s2"]
-    S = params["S"]
-    
-    patch_size = params["patch_size"]
+    patch_size      = params["patch_size"]                          # Size of patches to run (size of one side of the square patch)
+    n_batch         = params["n_batch"]                             # Number of batches to divide data into
+    pca_frac        = params["pca_frac"]                            # 
+    overcomplete    = params["overcomplete"]                        # 
+    learning_rate   = params["learning_rate"]                       # 
+    n_grad_step     = params["n_grad_step"]                         #
+    loss_type       = params["loss_type"]                           # 
+    n_gauss_dim     = params["n_gauss_dim"]                         # 
+    n_lat_samp      = params["n_lat_samp"]                          # 
+    sigma           = params["sigma"]                               # 
+    param_save_freq = params["param_save_freq"]                     # 
+    log_freq        = params["log_freq"]                            # 
+    s1              = params["s1"]                                  # 
+    s2              = params["s2"]                                  #
+    S               = params["S"]                                   #
+   #  patch_size      = params["patch_size"]                        # 
         
     print("getting data")
-    if params["pca_truncation"] == "cut":
-        n_pca = int((params["patch_size"] ** 2)*params["pca_frac"])
+    if params["pca_truncation"] == "cut":                           # Option for hard cut-offs in the dimensionality-reducing PCA step
+        n_pca = int((params["patch_size"] ** 2)*params["pca_frac"]) # Calculate the number of PCA components to keep
 
         if old:
-            data,varif,test,PCA = dat.get_data(patch_size,n_pca,"BSDS",True)
+            data,varif,test,PCA = dat.get_data(patch_size,n_pca,"BSDS",True) # 
         else:
             data,varif,test,PCA = dat.get_data(patch_size,n_pca,params["dataset"],True)
 
         n_lat = int(n_pca * params["overcomplete"])
         
-    elif params["pca_truncation"] == "smooth":
+    elif params["pca_truncation"] == "smooth":              # Option for smooth truncation in the PCA dimensionality reduction step
         n_pca = int((params["patch_size"] ** 2))
 
         if old:
-            data,varif,test,PCA = dat.get_data(patch_size,n_pca,"BSDS",False)
+            data,varif,test,PCA     = dat.get_data(patch_size,n_pca,"BSDS",False)
             dataw,varifw,testw,PCAw = dat.get_data(patch_size,n_pca,params["dataset"],True)
         else:
-            data,varif,test,PCA = dat.get_data(patch_size,n_pca,params["dataset"],False)
+            data,varif,test,PCA     = dat.get_data(patch_size,n_pca,params["dataset"],False)
             dataw,varifw,testw,PCAw = dat.get_data(patch_size,n_pca,params["dataset"],True)
         
-        freq = np.linspace(0,1,data.shape[1])
-        fc = 1./params["overcomplete"]
+        freq  = np.linspace(0,1,data.shape[1]) #
+        fc    = 1./params["overcomplete"]      #
         
-        n_lat = int(n_pca)
+        n_lat = int(n_pca)                     # 
 
-        mask = np.array([np.exp(-((freq/fc)**4))])
+        mask  = np.array([np.exp(-((freq/fc)**4))])
 
-        ev = np.sqrt(np.array([PCA.explained_variance_]))
+        ev    = np.sqrt(np.array([PCA.explained_variance_]))
         
-        data = dataw*mask
-        varif = varifw*mask
-        test = testw*mask
+        data  = dataw*mask   # Apply mask to ???
+        varif = varifw*mask  # Apply mask to ???
+        test  = testw*mask   # Apply mask to ??? 
         
-        data = PCA.inverse_transform(data)
-        varif = PCA.inverse_transform(test)
-        test = PCA.inverse_transform(varif)
+        data  = PCA.inverse_transform(data)   # 
+        varif = PCA.inverse_transform(test)   # 
+        test  = PCA.inverse_transform(varif)  # 
 
-        s = np.std(data)
+        s     = np.std(data)
 
-        data /= s
-        varif /= s
-        test /= s
+        data  /= s  # Normalize the data
+        varif /= s  # Normalize the ??
+        test  /= s  # Normalize the ??
         
     print("constructing network")
     
